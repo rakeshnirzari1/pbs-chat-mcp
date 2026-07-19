@@ -9,7 +9,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(express.json());
 
 const server = new Server(
   { name: "pbs-chat-mcp", version: "1.0.0" },
@@ -21,18 +20,6 @@ const PBS_ENDPOINTS = [
   "organisations", "restrictions", "parameters", "criteria",
   "copayments", "fees", "markup-bands", "programs", "summary-of-changes",
 ] as const;
-
-const toolSchema = {
-  type: "object" as const,
-  properties: {
-    endpoint: { type: "string", enum: PBS_ENDPOINTS },
-    method: { type: "string", enum: ["GET", "POST"], default: "GET" },
-    params: { type: "object", additionalProperties: true },
-    subscriptionKey: { type: "string" },
-    timeout: { type: "number", default: 30000 },
-  },
-  required: ["endpoint"],
-};
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [{
@@ -81,13 +68,20 @@ server.connect(transport).catch((err) => {
   process.exit(1);
 });
 
-app.use(express.json({ limit: "10mb" }));
-
-// MCP endpoint at root
-app.all("/", (req, res) => transport.handleRequest(req, res));
+// Only parse JSON for health check, let transport handle root
+app.use((req, res, next) => {
+  if (req.path === "/health") {
+    express.json()(req, res, next);
+  } else {
+    next();
+  }
+});
 
 // Health check
 app.get("/health", (req, res) => res.json({ status: "ok", service: "pbs-chat-mcp" }));
+
+// MCP endpoint at root - transport handles body parsing
+app.all("/", (req, res) => transport.handleRequest(req, res));
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 app.listen(PORT, "0.0.0.0", () => {
