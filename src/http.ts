@@ -9,7 +9,15 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(express.json());
+
+// Use raw body parser for MCP endpoint so transport can parse
+app.use((req, res, next) => {
+  if (req.path === "/" && (req.method === "GET" || req.method === "POST")) {
+    express.raw({ type: "*/*", limit: "10mb" })(req, res, next);
+  } else {
+    express.json({ limit: "10mb" })(req, res, next);
+  }
+});
 
 const server = new Server(
   { name: "pbs-chat-mcp", version: "1.0.0" },
@@ -64,8 +72,6 @@ server.connect(transport).catch((err) => {
   console.error("[PBS Chat MCP] Failed to connect transport:", err);
   process.exit(1);
 });
-
-app.use(express.json({ limit: "10mb" }));
 
 // MCP endpoint at root - handles GET (SSE) and POST (messages)
 app.all("/", (req, res) => transport.handleRequest(req, res));
