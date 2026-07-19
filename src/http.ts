@@ -59,22 +59,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 const transports: Record<string, SSEServerTransport> = {};
 
 app.get("/sse", async (req, res) => {
-  const transport = new SSEServerTransport("/messages", res);
-  transports[transport.sessionId] = transport;
+  console.error("[PBS Chat MCP] New SSE connection request");
+  try {
+    const transport = new SSEServerTransport("/messages", res);
+    transports[transport.sessionId] = transport;
+    console.error(`[PBS Chat MCP] SSE session created: ${transport.sessionId}`);
 
-  res.on("close", () => {
-    delete transports[transport.sessionId];
-  });
+    res.on("close", () => {
+      console.error(`[PBS Chat MCP] SSE connection closed: ${transport.sessionId}`);
+      delete transports[transport.sessionId];
+    });
 
-  await server.connect(transport);
+    await server.connect(transport);
+    console.error(`[PBS Chat MCP] Server connected to transport: ${transport.sessionId}`);
+  } catch (err) {
+    console.error("[PBS Chat MCP] SSE connection error:", err);
+    res.status(500).send("Internal Server Error");
+  }
 });
 
 app.post("/messages", async (req, res) => {
   const sessionId = req.query.sessionId as string;
+  console.error(`[PBS Chat MCP] POST /messages for session: ${sessionId}`);
   const transport = transports[sessionId];
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
+    console.error(`[PBS Chat MCP] No transport found for session: ${sessionId}`);
     res.status(400).send("No transport found for sessionId");
   }
 });
@@ -82,16 +93,24 @@ app.post("/messages", async (req, res) => {
 // Health check
 app.get("/health", (req, res) => res.json({ status: "ok", service: "pbs-chat-mcp" }));
 
-// Root endpoint for mcp-remote to discover
+// Root endpoint for discovery
 app.get("/", (req, res) => {
   res.json({
     name: "pbs-chat-mcp",
     version: "1.0.0",
-    transports: {
-      sse: "/sse",
-      messages: "/messages"
-    }
+    transports: { sse: "/sse", messages: "/messages" }
   });
+});
+
+// Global error handlers
+process.on("uncaughtException", (err) => {
+  console.error("[PBS Chat MCP] Uncaught Exception:", err);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[PBS Chat MCP] Unhandled Rejection:", reason);
+  process.exit(1);
 });
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -100,4 +119,5 @@ app.listen(PORT, "0.0.0.0", () => {
   console.error(`[PBS Chat MCP] SSE endpoint: http://localhost:${PORT}/sse`);
   console.error(`[PBS Chat MCP] Messages endpoint: http://localhost:${PORT}/messages`);
   console.error(`[PBS Chat MCP] Health: http://localhost:${PORT}/health`);
+  console.error(`[PBS Chat MCP] Ready for connections`);
 });
