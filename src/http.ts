@@ -1,6 +1,6 @@
 import express from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { pbsApiToolHandler } from "./tools/pbsApi.js";
 import { pbsApiToolSchema } from "./schemas.js";
@@ -16,31 +16,31 @@ const server = new Server(
   { capabilities: { tools: {} } }
 );
 
-const tools = [
-  {
+const PBS_ENDPOINTS = [
+  "items", "prescribers", "item-overview", "schedules", "atc-codes",
+  "organisations", "restrictions", "parameters", "criteria",
+  "copayments", "fees", "markup-bands", "programs", "summary-of-changes",
+] as const;
+
+const toolSchema = {
+  type: "object" as const,
+  properties: {
+    endpoint: { type: "string", enum: PBS_ENDPOINTS },
+    method: { type: "string", enum: ["GET", "POST"], default: "GET" },
+    params: { type: "object", additionalProperties: true },
+    subscriptionKey: { type: "string" },
+    timeout: { type: "number", default: 30000 },
+  },
+  required: ["endpoint"],
+};
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [{
     name: "pbs_api",
     description: "Query the Australian Pharmaceutical Benefits Scheme (PBS) API for medicine information, pricing, prescribers, and more.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        endpoint: {
-          type: "string",
-          description: "The PBS API endpoint to query (e.g., 'items', 'prescribers', 'item-overview', 'schedules', 'atc-codes', 'organisations', 'restrictions', 'parameters', 'criteria', 'copayments', 'fees', 'markup-bands', 'programs', 'summary-of-changes')",
-          enum: ["items", "prescribers", "item-overview", "schedules", "atc-codes", "organisations", "restrictions", "parameters", "criteria", "copayments", "fees", "markup-bands", "programs", "summary-of-changes"],
-        },
-        method: { type: "string", enum: ["GET", "POST"], default: "GET" },
-        params: { type: "object", additionalProperties: true },
-        subscriptionKey: { type: "string" },
-        timeout: { type: "number", default: 30000 },
-      },
-      required: ["endpoint"],
-    },
-  },
-];
-
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools };
-});
+    inputSchema: toolSchema,
+  }],
+}));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -50,31 +50,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const result = await pbsApiToolHandler(validated);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
-    return { content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }], isError: true };
+    return {
+      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+      isError: true,
+    };
   }
 });
 
-const transports: Record<string, SSEServerTransport> = {};
-
-app.get("/sse", async (req, res) => {
-  const transport = new SSEServerTransport("/messages", res);
-  transports[transport.sessionId] = transport;
-  res.on("close", () => delete transports[transport.sessionId]);
-  await server.connect(transport);
+// Streamable HTTP Transport (works at root "/")
+const transport = new StreamableHTTPServerTransport({
+  sessionIdGenerator: () => crypto.randomUUID(),
 });
 
-app.post("/messages", async (req, res) => {
-  const sessionId = req.query.sessionId as string;
-  const transport = transports[sessionId];
-  if (transport) await transport.handlePostMessage(req, res);
-  else res.status(400).send("No transport found for sessionId");
-});
+await server.connect(transport);
 
+app.all("/", (req, res) => transport.handleRequest(req, res));
+
+// Health check
 app.get("/health", (req, res) => res.json({ status: "ok", service: "pbs-chat-mcp" }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.error(`[PBS Chat MCP] HTTP server running on port ${PORT}`);
-  console.error(`[PBS Chat MCP] SSE endpoint: http://localhost:${PORT}/sse`);
-  console.error(`[PBS Chat MCP] Messages endpoint: http://localhost:${PORT}/messages`);
+  console.error(`[PBS Chat MCP] MCP endpoint: http://localhost:${PORT}/`);
 });
