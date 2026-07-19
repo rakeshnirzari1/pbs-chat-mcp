@@ -1,13 +1,13 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
-import { PbsApiToolArgs } from "./schemas.js";
+import { PbsApiToolArgs } from "../schemas.js";
 
 let apiClient: AxiosInstance | null = null;
 let cachedSubscriptionKey: string | null = null;
 let cachedBaseUrl: string | null = null;
 
 function getApiClient(subscriptionKey?: string, baseUrl?: string): AxiosInstance {
-  const key = subscriptionKey || cachedSubscriptionKey || process.env.PBS_API_SUBSCRIPTION_KEY;
-  const url = baseUrl || cachedBaseUrl || process.env.PBS_API_BASE_URL || "https://data-api.health.gov.au/pbs/api/v3";
+  const key = subscriptionKey || process.env.PBS_API_SUBSCRIPTION_KEY;
+  const url = baseUrl || process.env.PBS_API_BASE_URL || "https://data-api.health.gov.au/pbs/api/v3";
   
   if (!key) {
     throw new Error("PBS API subscription key is required. Set PBS_API_SUBSCRIPTION_KEY environment variable or provide subscriptionKey parameter.");
@@ -31,7 +31,7 @@ function getApiClient(subscriptionKey?: string, baseUrl?: string): AxiosInstance
   return apiClient;
 }
 
-export async function pbsApiTool(args: PbsApiToolArgs) {
+export async function pbsApiToolHandler(args: PbsApiToolArgs) {
   const client = getApiClient(args.subscriptionKey);
   const config: AxiosRequestConfig = {
     method: args.method,
@@ -78,5 +78,3 @@ export async function pbsApiTool(args: PbsApiToolArgs) {
     }
   }
 }
-
-export { pbsApiToolHandler } from "./index.js";
