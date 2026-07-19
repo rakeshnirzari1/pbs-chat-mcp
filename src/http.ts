@@ -55,50 +55,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// SSE transport management - keep transports alive
+// SSE transport management
 const transports: Record<string, SSEServerTransport> = {};
 
 app.get("/sse", async (req, res) => {
-  console.error("[PBS Chat MCP] New SSE connection request");
   try {
+    console.error("[PBS Chat MCP] New SSE connection requested");
     const transport = new SSEServerTransport("/messages", res);
     transports[transport.sessionId] = transport;
-    console.error(`[PBS Chat MCP] SSE session created: ${transport.sessionId} (total: ${Object.keys(transports).length})`);
 
     res.on("close", () => {
-      console.error(`[PBS Chat MCP] SSE connection closed: ${transport.sessionId}`);
-      // Don't delete immediately - keep for a bit for mcp-remote to connect
-      setTimeout(() => {
-        delete transports[transport.sessionId];
-        console.error(`[PBS Chat MCP] Transport cleaned up: ${transport.sessionId} (remaining: ${Object.keys(transports).length})`);
-      }, 30000); // Keep for 30 seconds
+      console.error(`[PBS Chat MCP] SSE connection closed for session ${transport.sessionId}`);
+      delete transports[transport.sessionId];
     });
 
     await server.connect(transport);
-    console.error(`[PBS Chat MCP] Server connected to transport: ${transport.sessionId}`);
-  } catch (err) {
-    console.error("[PBS Chat MCP] SSE connection error:", err);
+    console.error(`[PBS Chat MCP] SSE transport connected for session ${transport.sessionId}`);
+  } catch (error) {
+    console.error("[PBS Chat MCP] Failed to create SSE transport:", error);
     res.status(500).send("Internal Server Error");
   }
 });
 
 app.post("/messages", async (req, res) => {
-  const sessionId = req.query.sessionId as string;
-  console.error(`[PBS Chat MCP] POST /messages for session: ${sessionId}`);
-  const transport = transports[sessionId];
-  if (transport) {
-    await transport.handlePostMessage(req, res);
-  } else {
-    console.error(`[PBS Chat MCP] No transport found for session: ${sessionId}`);
-    console.error(`[PBS Chat MCP] Available sessions: ${Object.keys(transports).join(", ")}`);
-    res.status(400).send("No transport found for sessionId");
+  try {
+    const sessionId = req.query.sessionId as string;
+    const transport = transports[sessionId];
+    if (transport) {
+      await transport.handlePostMessage(req, res);
+    } else {
+      console.error(`[PBS Chat MCP] No transport found for session ${sessionId}`);
+      res.status(400).send("No transport found for sessionId");
+    }
+  } catch (error) {
+    console.error("[PBS Chat MCP] Error handling message:", error);
+    res.status(500).send("Internal Server Error");
   }
 });
 
 // Health check
 app.get("/health", (req, res) => res.json({ status: "ok", service: "pbs-chat-mcp" }));
 
-// Root endpoint for discovery
+// Root endpoint for mcp-remote discovery
 app.get("/", (req, res) => {
   res.json({
     name: "pbs-chat-mcp",
