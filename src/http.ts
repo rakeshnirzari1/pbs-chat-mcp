@@ -55,7 +55,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// SSE transport management
+// SSE transport management - keep transports alive
 const transports: Record<string, SSEServerTransport> = {};
 
 app.get("/sse", async (req, res) => {
@@ -63,11 +63,15 @@ app.get("/sse", async (req, res) => {
   try {
     const transport = new SSEServerTransport("/messages", res);
     transports[transport.sessionId] = transport;
-    console.error(`[PBS Chat MCP] SSE session created: ${transport.sessionId}`);
+    console.error(`[PBS Chat MCP] SSE session created: ${transport.sessionId} (total: ${Object.keys(transports).length})`);
 
     res.on("close", () => {
       console.error(`[PBS Chat MCP] SSE connection closed: ${transport.sessionId}`);
-      delete transports[transport.sessionId];
+      // Don't delete immediately - keep for a bit for mcp-remote to connect
+      setTimeout(() => {
+        delete transports[transport.sessionId];
+        console.error(`[PBS Chat MCP] Transport cleaned up: ${transport.sessionId} (remaining: ${Object.keys(transports).length})`);
+      }, 30000); // Keep for 30 seconds
     });
 
     await server.connect(transport);
@@ -86,6 +90,7 @@ app.post("/messages", async (req, res) => {
     await transport.handlePostMessage(req, res);
   } else {
     console.error(`[PBS Chat MCP] No transport found for session: ${sessionId}`);
+    console.error(`[PBS Chat MCP] Available sessions: ${Object.keys(transports).join(", ")}`);
     res.status(400).send("No transport found for sessionId");
   }
 });
