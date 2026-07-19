@@ -70,10 +70,18 @@ server.connect(transport).catch((err) => {
 
 const app = express();
 
-// Raw body parser for MCP endpoint
+// Handle raw body for MCP endpoint
 app.use((req, res, next) => {
   if (req.path === "/" && (req.method === "GET" || req.method === "POST")) {
-    express.raw({ type: "*/*", limit: "10mb" })(req, res, next);
+    // Use text parser to preserve raw body for transport
+    express.text({ type: "*/*", limit: "10mb" })(req, res, (err) => {
+      if (err) return next(err);
+      // Convert text body to buffer for transport
+      if (typeof req.body === "string") {
+        req.body = Buffer.from(req.body);
+      }
+      next();
+    });
   } else {
     express.json({ limit: "10mb" })(req, res, next);
   }
