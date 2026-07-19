@@ -9,7 +9,14 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
+app.use(express.json());
 
+// Create transport - it handles multiple sessions internally
+const transport = new StreamableHTTPServerTransport({
+  sessionIdGenerator: () => crypto.randomUUID(),
+});
+
+// Create server
 const server = new Server(
   { name: "pbs-chat-mcp", version: "1.0.0" },
   { capabilities: { tools: {} } }
@@ -54,45 +61,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Streamable HTTP Transport - handles both GET (SSE) and POST at root "/"
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: () => crypto.randomUUID(),
-});
-
+// Connect server to transport
 server.connect(transport).catch((err) => {
   console.error("[PBS Chat MCP] Failed to connect transport:", err);
   process.exit(1);
 });
 
-// Let the transport handle body parsing - only add express.json for health
-app.use((req, res, next) => {
-  if (req.path === "/health") {
-    express.json()(req, res, next);
-  } else {
-    next();
-  }
-});
-
-// MCP endpoint at root - handles both GET and POST
+// MCP endpoint - transport handles all requests including session management
 app.all("/", (req, res) => transport.handleRequest(req, res));
 
 // Health check
 app.get("/health", (req, res) => res.json({ status: "ok", service: "pbs-chat-mcp" }));
 
-// Error handlers
+// Root info
+app.get("/", (req, res) => {
+  res.json({
+    name: "pbs-chat-mcp",
+    version: "1.0.0",
+    transports: { streamableHttp: "/" }
+  });
+});
+
 process.on("uncaughtException", (err) => {
-  console.error("[PBS Chat MCP] Uncaught:", err);
+  console.error("[PBS Chat MCP] Uncaught Exception:", err);
   process.exit(1);
 });
+
 process.on("unhandledRejection", (reason) => {
-  console.error("[PBS Chat MCP] Unhandled:", reason);
+  console.error("[PBS Chat MCP] Unhandled Rejection:", reason);
   process.exit(1);
 });
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 app.listen(PORT, "0.0.0.0", () => {
-  console.error(`[PBS Chat MCP] HTTP server on port ${PORT}`);
+  console.error(`[PBS Chat MCP] HTTP server running on port ${PORT}`);
   console.error(`[PBS Chat MCP] MCP endpoint: http://localhost:${PORT}/`);
   console.error(`[PBS Chat MCP] Health: http://localhost:${PORT}/health`);
-  console.error(`[PBS Chat MCP] Ready`);
+  console.error(`[PBS Chat MCP] Ready for connections`);
 });
