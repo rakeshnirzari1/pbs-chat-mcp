@@ -9,7 +9,10 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(express.json());
+
+// Must parse JSON bodies before StreamableHTTPServerTransport handles them
+app.use(express.json({ limit: "10mb" }));
+app.use(express.text({ type: "text/event-stream", limit: "10mb" }));
 
 const server = new Server(
   { name: "pbs-chat-mcp", version: "1.0.0" },
@@ -38,7 +41,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [{
     name: "pbs_api",
     description: "Query the Australian Pharmaceutical Benefits Scheme (PBS) API for medicine information, pricing, prescribers, and more.",
-    inputSchema: toolSchema,
+    inputSchema: {
+      type: "object",
+      properties: {
+        endpoint: { type: "string", enum: PBS_ENDPOINTS },
+        method: { type: "string", enum: ["GET", "POST"], default: "GET" },
+        params: { type: "object", additionalProperties: true },
+        subscriptionKey: { type: "string" },
+        timeout: { type: "number", default: 30000 },
+      },
+      required: ["endpoint"],
+    },
   }],
 }));
 
@@ -64,13 +77,14 @@ const transport = new StreamableHTTPServerTransport({
 
 await server.connect(transport);
 
+// Handle all requests at root
 app.all("/", (req, res) => transport.handleRequest(req, res));
 
 // Health check
 app.get("/health", (req, res) => res.json({ status: "ok", service: "pbs-chat-mcp" }));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const PORT = parseInt(process.env.PORT || "3000", 10);
+app.listen(PORT, "0.0.0.0", () => {
   console.error(`[PBS Chat MCP] HTTP server running on port ${PORT}`);
   console.error(`[PBS Chat MCP] MCP endpoint: http://localhost:${PORT}/`);
 });
