@@ -9,14 +9,16 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(express.json());
 
-// Create transport - it handles multiple sessions internally
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: () => crypto.randomUUID(),
+// Raw body parser for MCP endpoint (required by StreamableHTTPServerTransport)
+app.use((req, res, next) => {
+  if (req.path === "/" && (req.method === "GET" || req.method === "POST")) {
+    express.raw({ type: "*/*", limit: "10mb" })(req, res, next);
+  } else {
+    express.json({ limit: "10mb" })(req, res, next);
+  }
 });
 
-// Create server
 const server = new Server(
   { name: "pbs-chat-mcp", version: "1.0.0" },
   { capabilities: { tools: {} } }
@@ -61,13 +63,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Connect server to transport
+// Streamable HTTP Transport (handles sessions automatically)
+const transport = new StreamableHTTPServerTransport({
+  sessionIdGenerator: () => crypto.randomUUID(),
+});
+
 server.connect(transport).catch((err) => {
   console.error("[PBS Chat MCP] Failed to connect transport:", err);
   process.exit(1);
 });
 
-// MCP endpoint - transport handles all requests including session management
+// MCP endpoint - transport handles everything including session management
 app.all("/", (req, res) => transport.handleRequest(req, res));
 
 // Health check
@@ -75,11 +81,14 @@ app.get("/health", (req, res) => res.json({ status: "ok", service: "pbs-chat-mcp
 
 // Root info
 app.get("/", (req, res) => {
-  res.json({
-    name: "pbs-chat-mcp",
-    version: "1.0.0",
-    transports: { streamableHttp: "/" }
-  });
+  if (req.method === "GET") {
+    res.json({
+      name: "pbs-chat-mcp",
+      version: "1.0.0",
+      transport: "streamable-http",
+      endpoint: "/"
+    });
+  }
 });
 
 process.on("uncaughtException", (err) => {
