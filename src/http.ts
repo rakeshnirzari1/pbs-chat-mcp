@@ -10,15 +10,6 @@ dotenv.config();
 
 const app = express();
 
-// Use raw body parser for MCP endpoint so transport can parse
-app.use((req, res, next) => {
-  if (req.path === "/" && (req.method === "GET" || req.method === "POST")) {
-    express.raw({ type: "*/*", limit: "10mb" })(req, res, next);
-  } else {
-    express.json({ limit: "10mb" })(req, res, next);
-  }
-});
-
 const server = new Server(
   { name: "pbs-chat-mcp", version: "1.0.0" },
   { capabilities: { tools: {} } }
@@ -63,7 +54,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Streamable HTTP Transport (works at single endpoint "/")
+// Streamable HTTP Transport (single endpoint at "/")
 const transport = new StreamableHTTPServerTransport({
   sessionIdGenerator: () => crypto.randomUUID(),
 });
@@ -71,6 +62,15 @@ const transport = new StreamableHTTPServerTransport({
 server.connect(transport).catch((err) => {
   console.error("[PBS Chat MCP] Failed to connect transport:", err);
   process.exit(1);
+});
+
+// Use standard JSON parser for root endpoint
+app.use((req, res, next) => {
+  if (req.path === "/" && req.method === "POST") {
+    express.json({ limit: "10mb" })(req, res, next);
+  } else {
+    next();
+  }
 });
 
 // MCP endpoint at root - handles GET (SSE) and POST (messages)
