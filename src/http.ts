@@ -58,10 +58,17 @@ function createServer() {
 
 const app = express();
 
-// Raw body parser for Streamable HTTP transport (required for MCP)
+// Raw body parser for Streamable HTTP transport - must be FIRST middleware
 app.use((req, res, next) => {
   if (req.path === "/" && (req.method === "GET" || req.method === "POST")) {
-    express.raw({ type: "*/*", limit: "10mb" })(req, res, next);
+    let data = "";
+    req.setEncoding("utf8");
+    req.on("data", chunk => { data += chunk; });
+    req.on("end", () => {
+      // Store raw body for StreamableHTTPServerTransport
+      (req as any).rawBody = Buffer.from(data || "");
+      next();
+    });
   } else {
     express.json({ limit: "10mb" })(req, res, next);
   }
