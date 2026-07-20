@@ -59,20 +59,23 @@ function createServer() {
 const app = express();
 app.use(express.json());
 
-// SSE transport management - new Server instance per connection
+// SSE transport management - create new Server per connection
 const transports: Record<string, SSEServerTransport> = {};
 
 app.get("/sse", async (req, res) => {
   try {
+    console.error("[PBS Chat MCP] New SSE connection requested");
     const server = createServer();
     const transport = new SSEServerTransport("/messages", res);
     transports[transport.sessionId] = transport;
 
     res.on("close", () => {
+      console.error(`[PBS Chat MCP] SSE connection closed: ${transport.sessionId}`);
       delete transports[transport.sessionId];
     });
 
     await server.connect(transport);
+    console.error(`[PBS Chat MCP] SSE transport connected: ${transport.sessionId} (total: ${Object.keys(transports).length})`);
   } catch (error) {
     console.error("[PBS Chat MCP] SSE connection error:", error);
     res.status(500).send("Internal Server Error");
@@ -81,10 +84,13 @@ app.get("/sse", async (req, res) => {
 
 app.post("/messages", async (req, res) => {
   const sessionId = req.query.sessionId as string;
+  console.error(`[PBS Chat MCP] POST /messages for session: ${sessionId}`);
   const transport = transports[sessionId];
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
+    console.error(`[PBS Chat MCP] No transport found for session: ${sessionId}`);
+    console.error(`[PBS Chat MCP] Available sessions: ${Object.keys(transports).join(", ")}`);
     res.status(400).send("No transport found for sessionId");
   }
 });
