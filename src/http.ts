@@ -57,7 +57,14 @@ function createServer() {
 }
 
 const app = express();
-app.use(express.json());
+app.use((req, res, next) => {
+  // SSE transport parses MCP JSON-RPC payloads from the raw request stream.
+  // If express.json() runs first, the stream is consumed and becomes unreadable.
+  if (req.path === "/messages") {
+    return next();
+  }
+  return express.json()(req, res, next);
+});
 
 // SSE transport management - keep transports alive longer
 const transports: Record<string, SSEServerTransport> = {};
