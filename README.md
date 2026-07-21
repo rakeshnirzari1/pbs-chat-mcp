@@ -32,7 +32,15 @@ npm install
 cp .env.example .env
 # Edit .env and add your PBS_API_SUBSCRIPTION_KEY
 
-# Build and run
+# Build and run MCP over stdio (for Claude Desktop)
+npm run build
+npm start
+```
+
+On Windows PowerShell, use:
+
+```powershell
+Copy-Item .env.example .env
 npm run build
 npm start
 ```
@@ -46,7 +54,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "pbs-chat": {
       "command": "node",
-      "args": ["/path/to/pbs-chat-mcp/dist/index.js"],
+      "args": ["C:/path/to/pbs-chat-mcp/dist/index.js"],
       "env": {
         "PBS_API_SUBSCRIPTION_KEY": "your-subscription-key-here"
       }
@@ -54,6 +62,11 @@ Add to your `claude_desktop_config.json`:
   }
 }
 ```
+
+Important:
+- Claude Desktop must launch the stdio entrypoint (`dist/index.js`), not the HTTP server (`dist/http.js`).
+- Build once before starting Claude Desktop: `npm run build`.
+- If the path contains spaces, keep it as a single JSON string value in `args`.
 
 ## Remote Deployment (Render)
 
@@ -76,7 +89,7 @@ git push -u origin main
 4. Configure:
    - **Name**: `pbs-chat-mcp`
    - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm start`
+  - **Start Command**: `npm run start:http`
    - **Instance Type**: Free (or Starter for better reliability)
 5. Add Environment Variable:
    - Key: `PBS_API_SUBSCRIPTION_KEY`
@@ -94,7 +107,7 @@ In Claude Desktop config:
   "mcpServers": {
     "pbs-chat": {
       "command": "npx",
-      "args": ["mcp-remote", "https://pbs-chat-mcp.onrender.com"],
+      "args": ["mcp-remote", "https://pbs-chat-mcp.onrender.com/sse"],
       "env": {
         "PBS_API_SUBSCRIPTION_KEY": "your-subscription-key-here"
       }
@@ -103,7 +116,14 @@ In Claude Desktop config:
 }
 ```
 
-**Note**: For remote MCP, you'll need the `mcp-remote` package. The server runs via stdio transport through the remote connection.
+**Note**: For remote MCP, you'll need the `mcp-remote` package. The hosted server uses SSE, and `mcp-remote` bridges that to stdio for Claude Desktop.
+
+## Troubleshooting Claude Desktop Connection
+
+- If Claude shows "failed to connect", confirm the command points to `dist/index.js`.
+- Rebuild after updates: `npm run build`.
+- Verify your key is set in Claude config `env` or in `.env`.
+- Check Claude Desktop logs for startup errors (missing Node, bad path, JSON syntax issues).
 
 ## Available Tools
 

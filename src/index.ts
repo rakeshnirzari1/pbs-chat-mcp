@@ -4,8 +4,11 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import dotenv from "dotenv";
 import { pbsApiToolHandler } from "./tools/pbsApi.js";
 import { pbsApiToolSchema } from "./schemas.js";
+
+dotenv.config();
 
 const server = new Server(
   { name: "pbs-chat-mcp", version: "1.0.0" },
