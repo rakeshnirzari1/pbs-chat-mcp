@@ -32,7 +32,7 @@ npm install
 cp .env.example .env
 # Edit .env and add your PBS_API_SUBSCRIPTION_KEY
 
-# Build and run MCP over stdio (for Claude Desktop)
+# Build and run HTTP/SSE server (for Railway/Render remote hosting)
 npm run build
 npm start
 ```
@@ -64,9 +64,8 @@ Add to your `claude_desktop_config.json`:
 ```
 
 Important:
-- Claude Desktop must launch the stdio entrypoint (`dist/index.js`), not the HTTP server (`dist/http.js`).
-- Build once before starting Claude Desktop: `npm run build`.
-- If the path contains spaces, keep it as a single JSON string value in `args`.
+- This local config is only needed if you run the server on your own machine.
+- For hosted Railway/Render usage, use `mcp-remote` config shown below.
 
 ## Remote Deployment (Render)
 
@@ -107,7 +106,7 @@ In Claude Desktop config:
   "mcpServers": {
     "pbs-chat": {
       "command": "npx",
-      "args": ["mcp-remote", "https://pbs-chat-mcp.onrender.com/sse"],
+      "args": ["-y", "mcp-remote@latest", "https://pbs-chat-mcp.onrender.com/sse", "--transport", "sse-only"],
       "env": {
         "PBS_API_SUBSCRIPTION_KEY": "your-subscription-key-here"
       }
@@ -121,7 +120,7 @@ In Claude Desktop config:
 ## Troubleshooting Claude Desktop Connection
 
 - If Claude shows "failed to connect", confirm the command points to `dist/index.js`.
-- Rebuild after updates: `npm run build`.
+- For hosted remote servers, use `--transport sse-only` in `mcp-remote` args.
 - Verify your key is set in Claude config `env` or in `.env`.
 - Check Claude Desktop logs for startup errors (missing Node, bad path, JSON syntax issues).
 
