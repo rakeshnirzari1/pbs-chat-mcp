@@ -56,13 +56,12 @@ function createServer() {
   return server;
 }
 
-// Create Express app WITHOUT global JSON middleware
 const app = express();
+app.use(express.json());
 
-// SSE transport management - create new Server per connection
+// SSE transport management - keep transports alive longer
 const transports: Record<string, SSEServerTransport> = {};
 
-// SSE endpoint - MUST be before any body-parsing middleware
 app.get("/sse", async (req, res) => {
   try {
     console.error("[PBS Chat MCP] New SSE connection requested");
@@ -72,20 +71,20 @@ app.get("/sse", async (req, res) => {
 
     res.on("close", () => {
       console.error(`[PBS Chat MCP] SSE connection closed: ${transport.sessionId}`);
-      delete transports[transport.sessionId];
+      // Don't delete immediately - keep for a grace period
+      setTimeout(() => {
+        delete transports[transport.sessionId];
+      }, 60000); // 60 second grace period
     });
 
     await server.connect(transport);
     console.error(`[PBS Chat MCP] SSE transport connected: ${transport.sessionId} (total: ${Object.keys(transports).length})`);
   } catch (error) {
     console.error("[PBS Chat MCP] SSE connection error:", error);
-    if (!res.headersSent) {
-      res.status(500).send("Internal Server Error");
-    }
+    res.status(500).send("Internal Server Error");
   }
 });
 
-// Messages endpoint - NO body parsing, raw stream
 app.post("/messages", async (req, res) => {
   const sessionId = req.query.sessionId as string;
   console.error(`[PBS Chat MCP] POST /messages for session: ${sessionId}`);
@@ -96,15 +95,6 @@ app.post("/messages", async (req, res) => {
     console.error(`[PBS Chat MCP] No transport found for session: ${sessionId}`);
     console.error(`[PBS Chat MCP] Available sessions: ${Object.keys(transports).join(", ")}`);
     res.status(400).send("No transport found for sessionId");
-  }
-});
-
-// JSON middleware for health/root routes ONLY
-app.use((req, res, next) => {
-  if (req.path === "/health" || req.path === "/") {
-    express.json()(req, res, next);
-  } else {
-    next();
   }
 });
 
