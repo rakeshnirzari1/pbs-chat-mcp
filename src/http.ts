@@ -1,7 +1,9 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { CallToolRequestSchema, ListToolsRequestSchema, isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { pbsApiToolHandler } from "./tools/pbsApi.js";
 import { pbsApiToolSchema } from "./schemas.js";
 import dotenv from "dotenv";
@@ -58,7 +60,7 @@ function createServer() {
 
 const app = express();
 app.use((req, res, next) => {
-  // SSE transport parses MCP JSON-RPC payloads from the raw request stream.
+  // Legacy SSE transport parses JSON-RPC payloads from raw stream.
   // If express.json() runs first, the stream is consumed and becomes unreadable.
   if (req.path === "/messages") {
     return next();
@@ -66,8 +68,56 @@ app.use((req, res, next) => {
   return express.json()(req, res, next);
 });
 
-// SSE transport management - keep transports alive longer
-const transports: Record<string, SSEServerTransport> = {};
+const transports: Record<string, SSEServerTransport | StreamableHTTPServerTransport> = {};
+
+app.all("/mcp", async (req, res) => {
+  try {
+    const sessionHeader = req.headers["mcp-session-id"];
+    const sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
+    let transport: StreamableHTTPServerTransport;
+
+    if (sessionId && transports[sessionId] instanceof StreamableHTTPServerTransport) {
+      transport = transports[sessionId] as StreamableHTTPServerTransport;
+    } else if (!sessionId && req.method === "POST" && isInitializeRequest(req.body)) {
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (sid) => {
+          transports[sid] = transport;
+          console.error(`[PBS Chat MCP] Streamable HTTP session initialized: ${sid}`);
+        },
+      });
+
+      transport.onclose = () => {
+        const sid = transport.sessionId;
+        if (sid && transports[sid]) {
+          delete transports[sid];
+          console.error(`[PBS Chat MCP] Streamable HTTP session closed: ${sid}`);
+        }
+      };
+
+      const server = createServer();
+      await server.connect(transport);
+    } else {
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Bad Request: No valid session ID provided" },
+        id: null,
+      });
+      return;
+    }
+
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("[PBS Chat MCP] Streamable HTTP error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: "Internal server error" },
+        id: null,
+      });
+    }
+  }
+});
 
 app.get("/sse", async (req, res) => {
   try {
@@ -96,7 +146,7 @@ app.post("/messages", async (req, res) => {
   const sessionId = req.query.sessionId as string;
   console.error(`[PBS Chat MCP] POST /messages for session: ${sessionId}`);
   const transport = transports[sessionId];
-  if (transport) {
+  if (transport instanceof SSEServerTransport) {
     await transport.handlePostMessage(req, res);
   } else {
     console.error(`[PBS Chat MCP] No transport found for session: ${sessionId}`);
@@ -113,7 +163,7 @@ app.get("/", (req, res) => {
   res.json({
     name: "pbs-chat-mcp",
     version: "1.0.0",
-    transports: { sse: "/sse", messages: "/messages" }
+    transports: { mcp: "/mcp", sse: "/sse", messages: "/messages" }
   });
 });
 
@@ -130,6 +180,7 @@ process.on("unhandledRejection", (reason) => {
 const PORT = parseInt(process.env.PORT || "3000", 10);
 app.listen(PORT, "0.0.0.0", () => {
   console.error(`[PBS Chat MCP] HTTP server running on port ${PORT}`);
+  console.error(`[PBS Chat MCP] MCP endpoint: http://localhost:${PORT}/mcp`);
   console.error(`[PBS Chat MCP] SSE endpoint: http://localhost:${PORT}/sse`);
   console.error(`[PBS Chat MCP] Messages endpoint: http://localhost:${PORT}/messages`);
   console.error(`[PBS Chat MCP] Health: http://localhost:${PORT}/health`);

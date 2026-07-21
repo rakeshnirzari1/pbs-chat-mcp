@@ -106,7 +106,7 @@ In Claude Desktop config:
   "mcpServers": {
     "pbs-chat": {
       "command": "npx",
-      "args": ["-y", "mcp-remote@latest", "https://pbs-chat-mcp.onrender.com/sse", "--transport", "sse-only"],
+      "args": ["-y", "mcp-remote@latest", "https://pbs-chat-mcp.onrender.com/mcp", "--transport", "http-only"],
       "env": {
         "PBS_API_SUBSCRIPTION_KEY": "your-subscription-key-here"
       }
@@ -115,12 +115,13 @@ In Claude Desktop config:
 }
 ```
 
-**Note**: For remote MCP, you'll need the `mcp-remote` package. The hosted server uses SSE, and `mcp-remote` bridges that to stdio for Claude Desktop.
+**Note**: For remote MCP, you'll need the `mcp-remote` package. The hosted server now supports modern Streamable HTTP on `/mcp` and legacy SSE on `/sse`.
 
 ## Troubleshooting Claude Desktop Connection
 
 - If Claude shows "failed to connect", confirm the command points to `dist/index.js`.
-- For hosted remote servers, use `--transport sse-only` in `mcp-remote` args.
+- For hosted remote servers, prefer `https://<host>/mcp` with `--transport http-only`.
+- Use `https://<host>/sse` with `--transport sse-only` only as a fallback.
 - Verify your key is set in Claude config `env` or in `.env`.
 - Check Claude Desktop logs for startup errors (missing Node, bad path, JSON syntax issues).
 
